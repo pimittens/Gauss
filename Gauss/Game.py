@@ -8,12 +8,12 @@ class Move(Enum):
     INCOME = 1
     PLACE = 2
     DISPLACE = 3
-    DISPLACE_REMOVE = 4
-    DISPLACE_PLACE = 5
-    DISPLACE_REPLACE = 6
+    DISPLACE_REMOVE = 4 # remove pieces to pay displace cost
+    DISPLACE_PLACE = 5 # place new piece
+    DISPLACE_REPLACE = 6 # displaced player places new pieces
     MOVE = 7
-    MOVE_REMOVE = 8
-    MOVE_REPLACE = 9
+    MOVE_REMOVE = 8 # remove pieces to be moved
+    MOVE_REPLACE = 9 # place removed pieces back on board
     CREATE_TRADE_ROUTE = 10
     USE_BONUS_TOKEN = 11
     PLACE_BONUS_TOKEN = 12
@@ -96,27 +96,40 @@ class BoardState:
             elif move[0] == Move.CREATE_TRADE_ROUTE:
                 # todo: score and claim bonus tokens
                 self.currentAction = Move.CREATE_TRADE_ROUTE
+            elif move[0] == Move.MOVE:
+                self.players[self.activePlayer].toRemove = self.players[self.activePlayer].skills[3] + 2
+                self.currentAction = Move.MOVE
             else:
                 self.currentAction = move[0]
         else:
-            if move[0] == Move.PLACE:
-                self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
-                self.currentAction = Move.PASS
-            elif move[0] == Move.DISPLACE:
-                # todo
-                pass
-            elif move[0] == Move.MOVE_REMOVE:
-                self.routes[move[2]].removeTradesman(self.activePlayer, move[1])
-                self.players[self.activePlayer].toReplace[move[1]] += 1
-                self.players[self.activePlayer].toRemove -= 1
-                pass
-            elif move[0] == Move.MOVE_REPLACE:
-                self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
-                self.players[self.activePlayer].toReplace[move[1]] -= 1
-                pass
-            elif move[0] == Move.CREATE_TRADE_ROUTE:
-                # todo: choose whether to make an office, improve skill, or place on coellen
-                pass
+            match move[0]:
+                case Move.PLACE:
+                    self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
+                    self.currentAction = Move.PASS
+                case Move.DISPLACE:
+                    self.players[move[1]].toReplace[move[2]] += 1
+                    self.routes[move[3]].removeTradesman(move[1], move[2])
+                    self.players[move[1]].toRemove += 1 + move[2]
+                    self.players[self.activePlayer].toRemove += 1 + move[2]
+                    self.currentAction = Move.DISPLACE_REMOVE
+                case Move.DISPLACE_REMOVE:
+                    self.players[self.activePlayer].supply[move[1].value] -= 1
+                    self.players[self.activePlayer].stock[move[1].value] += 1
+                    self.players[self.activePlayer].toRemove -= 1
+                    if self.players[self.activePlayer].toRemove == 0:
+                        self.currentAction = Move.DISPLACE_PLACE
+                case Move.MOVE_REMOVE:
+                    self.routes[move[2]].removeTradesman(self.activePlayer, move[1])
+                    self.players[self.activePlayer].toReplace[move[1].value] += 1
+                    self.players[self.activePlayer].toRemove -= 1
+                case Move.MOVE_REPLACE:
+                    self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
+                    self.players[self.activePlayer].toReplace[move[1].value] -= 1
+                    if sum(self.players[self.activePlayer].toReplace) == 0:
+                        self.currentAction = Move.PASS
+                case Move.CREATE_TRADE_ROUTE:
+                    # todo: choose whether to make an office, improve skill, or place on coellen
+                    pass
 
 
     def getOptions(self):
@@ -125,15 +138,13 @@ class BoardState:
             # no current action so get options for next action
             # income, place tradesman, displace tradesman, move tradesmen, create trade route
             if self.players[self.activePlayer].actions > 0:
-                if self.players[self.activePlayer].stock[0] > 0 or self.players[self.activePlayer].stock[1] > 0:
+                if sum(self.players[self.activePlayer].stock) > 0:
                     ret.append((Move.INCOME, ))
-                if self.players[self.activePlayer].supply[0] > 0 or self.players[self.activePlayer].supply[1] > 0:
+                if sum(self.players[self.activePlayer].supply) > 0:
                     ret.append((Move.PLACE, ))
                     tokensOnRoutes = self.checkOtherTokensOnRoutes()
-                    if ((tokensOnRoutes[0] and (self.players[self.activePlayer].supply[0] +
-                                               self.players[self.activePlayer].supply[1]) > 1) or
-                            (tokensOnRoutes[1] and (self.players[self.activePlayer].supply[0] +
-                                                    self.players[self.activePlayer].supply[1] > 2))):
+                    if (tokensOnRoutes[0] and (sum(self.players[self.activePlayer].supply) > 1) or
+                            (tokensOnRoutes[1] and (sum(self.players[self.activePlayer].supply) > 2))):
                         ret.append((Move.DISPLACE, ))
                 tokensOnRoutes = self.checkSelfTokensOnRoutes()
                 if tokensOnRoutes[0] or tokensOnRoutes[1]:
@@ -171,12 +182,34 @@ class BoardState:
                         ret.append((Move.PLACE, Tradesman.MERCHANT, route))
                 route += 1
         elif self.currentAction == Move.DISPLACE:
-            # todo: first choose a piece to displace (pay necessary amount), then replace with own piece, then displaced player places pieces
+            route = 0
+            while route < len(self.routes):
+                for space in self.routes[route].spaces:
+                    if space[0] != -1 and space[0] != self.activePlayer:
+                        if space[1] == Tradesman.MERCHANT:
+                            if sum(self.players[self.activePlayer].supply) > 2:
+                                ret.append((Move.DISPLACE_REMOVE, space[0], Tradesman.MERCHANT, route))
+                        else:
+                            # active player will have at least 2 tradesmen if they were allowed to take this action
+                            ret.append((Move.DISPLACE_REMOVE, space[0], Tradesman.TRADER, route))
+                route += 1
+        elif self.currentAction == Move.DISPLACE_REMOVE:
+            # active player must remove pieces from their supply to pay cost
+            if self.players[self.activePlayer].supply[0] > 0:
+                ret.append((Move.DISPLACE_REMOVE, Tradesman.TRADER))
+            if self.players[self.activePlayer].supply[1] > 0:
+                ret.append((Move.DISPLACE_REMOVE, Tradesman.MERCHANT))
+        elif self.currentAction == Move.DISPLACE_PLACE:
+            # todo
+            pass
+        elif self.currentAction == Move.DISPLACE_REPLACE:
+            # todo
             pass
         elif self.currentAction == Move.MOVE:
             if self.players[self.activePlayer].toRemove > 0:
-                for route in self.routes:
-                    for space in route.spaces:
+                route = 0
+                while route < len(self.routes):
+                    for space in self.routes[route].spaces:
                         if space[0] == self.activePlayer:
                             ret.append((Move.MOVE_REMOVE, space[1], route))
                     route += 1

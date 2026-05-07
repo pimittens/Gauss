@@ -10,6 +10,7 @@ board = Game.BoardState((Game.Player(HansaPlayers.HumanPlayer()), Game.Player(Ha
 board.printBoard()
 
 while not board.isOver:
+    options = board.getOptions() # turn advances in get options currently which causes bugs if we don't call it before letting the player move
     move = board.getOptionPlayer().play(board)
     if board.printingEnabled:
         printMove(move)

@@ -19,11 +19,15 @@ def printOptions(options, board):
                     print(f"{i}: Place a {option[1].name} on the route between {board.routes[option[2]].leftCity.name} "
                           f"and {board.routes[option[2]].rightCity.name}")
             case Move.DISPLACE:
-                print(f"{i}: Displace an opponent's tradesman")
+                if len(option) == 1:
+                    print(f"{i}: Displace an opponent's tradesman")
+                else:
+                    print(f"{i}: Displace player {option[1]}'s {option[2].name} on the route between "
+                          f"{board.routes[option[3]].leftCity.name} and {board.routes[option[3]].rightCity.name}")
             case Move.DISPLACE_REMOVE:
-                pass # todo
+                print(f"{i}: Remove one {option[1].name} from your supply to pay for displacing")
             case Move.DISPLACE_REPLACE:
-                pass # todo
+                print(f"{i}: Unsupported action type - {option[0]}")
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
         i += 1
