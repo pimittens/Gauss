@@ -1,7 +1,16 @@
 import Game
+import HansaPlayers
 
-game = Game.BoardState((Game.Player(), ), True)
-game.printBoard()
 
-while not game.isOver:
-    break # todo: play until game ends
+def printMove(move):
+    print(f"making move: {move}")  # todo: more detail
+
+
+board = Game.BoardState((Game.Player(HansaPlayers.HumanPlayer()), Game.Player(HansaPlayers.RandomPlayer())), True)
+board.printBoard()
+
+while not board.isOver:
+    move = board.getOptionPlayer().play(board)
+    if board.printingEnabled:
+        printMove(move)
+    board.makeMove(move)

@@ -81,17 +81,18 @@ class BoardState:
         self.completedCities = 0
         self.cities = []
         self.routes = []
-        self.currentAction = 0
+        self.currentAction = Move.PASS
         self.bonusTokens = []
         self.isOver = False
+        self.printingEnabled = True # todo
         if initialState:
             self.setup()
 
     def makeMove(self, move):
         if self.currentAction == Move.PASS:
+            self.players[self.activePlayer].actions -= 1
             if move[0] == Move.INCOME:
-                self.players[self.activePlayer].income()
-                self.players[self.activePlayer].actions -= 1
+                self.players[self.activePlayer].income(self.getIncomeAmount(self.players[self.activePlayer].skills[4]))
             elif move[0] == Move.CREATE_TRADE_ROUTE:
                 # todo: score and claim bonus tokens
                 self.currentAction = Move.CREATE_TRADE_ROUTE
@@ -104,11 +105,17 @@ class BoardState:
             elif move[0] == Move.DISPLACE:
                 # todo
                 pass
-            elif move[0] == Move.MOVE:
-                # todo
+            elif move[0] == Move.MOVE_REMOVE:
+                self.routes[move[2]].removeTradesman(self.activePlayer, move[1])
+                self.players[self.activePlayer].toReplace[move[1]] += 1
+                self.players[self.activePlayer].toRemove -= 1
+                pass
+            elif move[0] == Move.MOVE_REPLACE:
+                self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
+                self.players[self.activePlayer].toReplace[move[1]] -= 1
                 pass
             elif move[0] == Move.CREATE_TRADE_ROUTE:
-                # todo
+                # todo: choose whether to make an office, improve skill, or place on coellen
                 pass
 
 
@@ -185,6 +192,15 @@ class BoardState:
         ret = set(ret) # remove duplicates
         return tuple(ret)
 
+    def getIncomeAmount(self, skillLevel):
+        if skillLevel == 0:
+            return 3
+        if skillLevel == 1:
+            return 5
+        if skillLevel == 2:
+            return 7
+        return 99 # all
+
     def canPlaceBonusToken(self, route):
         if self.routes[route].bonusToken == -1:
             return False
@@ -224,6 +240,15 @@ class BoardState:
                 return (True, True)
         return (trader, merchant)
 
+    def getOptionPlayerID(self):
+        # return brain of player to move
+        # todo: when displacing a player other than the active player needs to move
+        return self.activePlayer
+
+    def getOptionPlayer(self):
+        # return brain of player to move
+        # todo: when displacing a player other than the active player needs to move
+        return self.players[self.activePlayer].brain
 
     def setup(self):
         traders = 5
@@ -231,6 +256,7 @@ class BoardState:
             player.supply = [traders, 1]
             player.stock = [11 - traders, 0]
             traders += 1
+        self.players[self.activePlayer].gainActions()
         # Groningen
         self.cities.append(City(Skill.BOOK, [-1, -1], ((Tradesman.TRADER, Color.WHITE),
                                                        (Tradesman.MERCHANT, Color.ORANGE)), (1, 0)))
@@ -389,6 +415,7 @@ class BoardState:
         if len(self.players) > 3:
             self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.EMDEN, CityName.STADE))
             self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.MARBURG, CityName.GOTTINGEN))
+        # todo: bonus token pile
 
     def printBoard(self):
         print(f"active player: {self.activePlayer}")
@@ -436,7 +463,8 @@ class BoardState:
             route += 1
 
 class Player:
-    def __init__(self):
+    def __init__(self, brain):
+        self.brain = brain
         # keys, actions, privilege, book, money
         self.skills = [0, 0, 0, 0, 0]
         # traders, merchants
