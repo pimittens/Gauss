@@ -26,6 +26,9 @@ def printOptions(options, board):
                           f"{board.routes[option[3]].leftCity.name} and {board.routes[option[3]].rightCity.name}")
             case Move.DISPLACE_REMOVE:
                 print(f"{i}: Remove one {option[1].name} from your supply to pay for displacing")
+            case Move.DISPLACE_PLACE:
+                print(f"{i}: Place a {option[1].name} on the route between {board.routes[board.displaceRoute].leftCity.name} "
+                      f"and {board.routes[board.displaceRoute].rightCity.name}")
             case Move.DISPLACE_REPLACE:
                 print(f"{i}: Unsupported action type - {option[0]}")
             case _:
