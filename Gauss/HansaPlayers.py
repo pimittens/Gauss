@@ -31,6 +31,17 @@ def printOptions(options, board):
                       f"and {board.routes[board.displaceRoute].rightCity.name}")
             case Move.DISPLACE_REPLACE:
                 print(f"{i}: Unsupported action type - {option[0]}")
+            case Move.MOVE:
+                print(f"{i}: Move up to {board.players[board.activePlayer].skills[3] + 2} tradesmen")
+            case Move.MOVE_REMOVE:
+                if (option[1] == Move.PASS):
+                    print(f"{i}: Finish choosing tradesmen to move")
+                else:
+                    print(f"{i}: Move the {option[1].name} on the route between {board.routes[option[2]].leftCity.name} "
+                          f"and {board.routes[option[2]].rightCity.name}")
+            case Move.MOVE_REPLACE:
+                print(f"{i}: Place a {option[1].name} on the route between {board.routes[option[2]].leftCity.name} "
+                      f"and {board.routes[option[2]].rightCity.name}")
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
         i += 1

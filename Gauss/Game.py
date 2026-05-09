@@ -124,12 +124,12 @@ class BoardState:
                     self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
                     self.currentAction = Move.PASS
                 case Move.DISPLACE:
-                    self.players[move[1]].toReplace[move[2]] += 1
+                    self.players[move[1]].toReplace[move[2].value] += 1
                     self.routes[move[3]].removeTradesman(move[1], move[2])
-                    self.players[move[1]].toRemove += 1 + move[2]
-                    self.players[self.activePlayer].toRemove += 1 + move[2]
+                    self.players[move[1]].toRemove += 1 + move[2].value
+                    self.players[self.activePlayer].toRemove += 1 + move[2].value
                     self.currentAction = Move.DISPLACE_REMOVE
-                    self.displaceRoute = move[2]
+                    self.displaceRoute = move[3]
                     self.displacedPlayer = move[1]
                 case Move.DISPLACE_REMOVE:
                     self.players[self.activePlayer].supply[move[1].value] -= 1
@@ -144,9 +144,12 @@ class BoardState:
                 case Move.DISPLACE_REPLACE:
                     pass # todo: displaced player places pieces
                 case Move.MOVE_REMOVE:
-                    self.routes[move[2]].removeTradesman(self.activePlayer, move[1])
-                    self.players[self.activePlayer].toReplace[move[1].value] += 1
-                    self.players[self.activePlayer].toRemove -= 1
+                    if move[1] == Move.PASS:
+                        self.players[self.activePlayer].toRemove = 0
+                    else:
+                        self.routes[move[2]].removeTradesman(self.activePlayer, move[1])
+                        self.players[self.activePlayer].toReplace[move[1].value] += 1
+                        self.players[self.activePlayer].toRemove -= 1
                 case Move.MOVE_REPLACE:
                     self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
                     self.players[self.activePlayer].toReplace[move[1].value] -= 1
@@ -241,6 +244,7 @@ class BoardState:
                         if space[0] == self.activePlayer:
                             ret.append((Move.MOVE_REMOVE, space[1], route))
                     route += 1
+                ret.append((Move.MOVE_REMOVE, Move.PASS)) # finish choosing pieces to move
             else:
                 route = 0
                 while route < len(self.routes):
