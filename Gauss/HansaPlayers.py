@@ -42,6 +42,13 @@ def printOptions(options, board):
             case Move.MOVE_REPLACE:
                 print(f"{i}: Place a {option[1].name} on the route between {board.routes[option[2]].leftCity.name} "
                       f"and {board.routes[option[2]].rightCity.name}")
+            case Move.CREATE_TRADE_ROUTE:
+                print(f"{i}: Create a trade route between the cities {board.routes[option[1]].leftCity.name} and "
+                      f"{board.routes[option[1]].rightCity.name}")
+            case Move.ESTABLISH_TRADING_POST:
+                print(f"{i}: Establish a trading post in the city of {option[1].name}") # todo: probably print office type
+            case Move.IMPROVE_SKILL:
+                print(f"{i}: Improve your {option[1]} skill") # todo:
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
         i += 1

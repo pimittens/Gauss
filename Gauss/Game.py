@@ -15,12 +15,13 @@ class Move(Enum):
     MOVE_REMOVE = 8 # remove pieces to be moved
     MOVE_REPLACE = 9 # place removed pieces back on board
     CREATE_TRADE_ROUTE = 10
-    ESTABLISH_OFFICE = 11
+    ESTABLISH_TRADING_POST = 11
     ESTABLISH_BONUS_OFFICE = 12
     IMPROVE_SKILL = 13
     PLACE_ON_COELLEN = 14
-    USE_BONUS_TOKEN = 15
-    PLACE_BONUS_TOKEN = 16
+    TRADE_ROUTE_NO_BONUS = 15
+    USE_BONUS_TOKEN = 16
+    PLACE_BONUS_TOKEN = 17
 
 class Tradesman(Enum):
     TRADER = 0
@@ -88,6 +89,7 @@ class BoardState:
         self.routes = []
         self.displaceRoute = 0
         self.displacedPlayer = 0
+        self.eastWestConnections = 0 # number of east-west connections which have been completed
         self.currentAction = Move.PASS
         self.bonusTokens = []
         self.bonusTokenOverdraw = False
@@ -102,15 +104,16 @@ class BoardState:
             if move[0] == Move.INCOME:
                 self.players[self.activePlayer].income(self.getIncomeAmount(self.players[self.activePlayer].skills[4]))
             elif move[0] == Move.CREATE_TRADE_ROUTE:
-                controller = self.cities[self.routes[move[1].value].leftCity.value].getController
+                self.displaceRoute = move[1] # reuse displaceRoute for the trade route being created
+                controller = self.cities[self.routes[self.displaceRoute].leftCity.value].getController()
                 if controller != -1:
                     self.players[controller].gainPoints(1)
-                controller = self.cities[self.routes[move[1].value].rightCity.value].getController
+                controller = self.cities[self.routes[self.displaceRoute].rightCity.value].getController()
                 if controller != -1:
                     self.players[controller].gainPoints(1)
-                if self.routes[move[1]].bonusToken != BonusToken.NONE:
-                    self.players[self.activePlayer].unusedBonusTokens.append(self.routes[move[1]].bonusToken)
-                    self.routes[move[1]].bonusToken = BonusToken.NONE
+                if self.routes[self.displaceRoute].bonusToken != BonusToken.NONE:
+                    self.players[self.activePlayer].unusedBonusTokens.append(self.routes[self.displaceRoute].bonusToken)
+                    self.routes[self.displaceRoute].bonusToken = BonusToken.NONE
                     self.drawBonusToken()
                 self.currentAction = Move.CREATE_TRADE_ROUTE
             elif move[0] == Move.MOVE:
@@ -155,10 +158,19 @@ class BoardState:
                     self.players[self.activePlayer].toReplace[move[1].value] -= 1
                     if sum(self.players[self.activePlayer].toReplace) == 0:
                         self.currentAction = Move.PASS
-                case Move.CREATE_TRADE_ROUTE:
-                    # todo: choose whether to make an office, improve skill, or place on coellen
-                    # when establishing an office need to check if the city has been completed
-                    pass
+                case Move.ESTABLISH_TRADING_POST:
+                    # todo: move tradesman to office, check for point gain, add 1 to completed cities, remove tradesmen from route
+                    # todo: also need to check for east west connection here
+                    self.currentAction = Move.PASS
+                case Move.IMPROVE_SKILL:
+                    # todo: improve skill, remove tradesmen from route
+                    self.currentAction = Move.PASS
+                case Move.PLACE_ON_COELLEN:
+                    # todo: place merchant on coellen, remove tradesmen from route
+                    self.currentAction = Move.PASS
+                case Move.TRADE_ROUTE_NO_BONUS:
+                    # todo: remove tradesmen from route
+                    self.currentAction = Move.PASS
 
 
     def getOptions(self):
@@ -234,7 +246,7 @@ class BoardState:
             if self.players[self.activePlayer].supply[1] > 0:
                 ret.append((Move.DISPLACE_PLACE, Tradesman.MERCHANT))
         elif self.currentAction == Move.DISPLACE_REPLACE:
-            # todo
+            # todo: displacePlayer replaces pieces
             pass
         elif self.currentAction == Move.MOVE:
             if self.players[self.activePlayer].toRemove > 0:
@@ -255,8 +267,18 @@ class BoardState:
                             ret.append((Move.MOVE_REPLACE, Tradesman.MERCHANT, route))
                     route += 1
         elif self.currentAction == Move.CREATE_TRADE_ROUTE:
-            # if empty office
-            ret.append((Move.MOVE_REPLACE, Tradesman.TRADER, route))
+            # if empty office in adjacent city, add establish office (or if bonus token) if possible
+            # player needs correct tradesman type on route and privilege
+            # if todo: (one for each office)
+            ret.append((Move.ESTABLISH_TRADING_POST,))
+            # if skill city and skill is not max level, add improve skill
+            # if todo:
+            ret.append((Move.IMPROVE_SKILL, ))
+            # if city is coellen and vacant space and player has privilege and merchant add option
+            # if todo:
+            ret.append((Move.PLACE_ON_COELLEN, ))
+            # add do nothing option
+            ret.append((Move.PASS, ))
         ret = set(ret) # remove duplicates
         return tuple(ret)
 
@@ -315,7 +337,7 @@ class BoardState:
         return (trader, merchant)
 
     def checkGameEnd(self):
-        # check if the game should end, should be called at the end of each action that can trigger the conditions
+        # check if the game should end, should be called at the end of each action that can trigger the conditions (todo?)
         if self.bonusTokenOverdraw or self.completedCities >= 10:
             self.isOver = True
         for player in self.players:
@@ -326,12 +348,14 @@ class BoardState:
 
     def getOptionPlayerID(self):
         # return brain of player to move
-        # todo: when displacing a player other than the active player needs to move
+        if self.currentAction == Move.DISPLACE_REPLACE:
+            return self.displacedPlayer
         return self.activePlayer
 
     def getOptionPlayer(self):
         # return brain of player to move
-        # todo: when displacing a player other than the active player needs to move
+        if self.currentAction == Move.DISPLACE_REPLACE:
+            return self.players[self.displacedPlayer].brain
         return self.players[self.activePlayer].brain
 
     def setup(self):
