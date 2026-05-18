@@ -1,10 +1,10 @@
 import random
 import numpy as np
-from Game import Move
+from Game import Move, Skill
 
 def printOptions(options, board):
     # todo: print possible moves
-    print(f"Decision for player {board.getOptionPlayerID()}")
+    print(f"Decision for player {board.getOptionPlayerID()} (current action: {board.currentAction})")
     i = 1
     for option in options:
         match option[0]:
@@ -46,11 +46,17 @@ def printOptions(options, board):
                 print(f"{i}: Create a trade route between the cities {board.routes[option[1]].leftCity.name} and "
                       f"{board.routes[option[1]].rightCity.name}")
             case Move.ESTABLISH_TRADING_POST:
-                print(f"{i}: Establish a trading post in the city of {option[1].name}") # todo: probably print office type
+                print(f"{i}: Establish a trading post in the city of {option[1].name}") # todo: probably print post type
             case Move.IMPROVE_SKILL:
-                print(f"{i}: Improve your {option[1]} skill") # todo:
+                print(f"{i}: Improve your {Skill(option[1]).name} skill")
+            case Move.TRADE_ROUTE_NO_BONUS:
+                print(f"{i}: Establish the trade route with no bonus")
+            case Move.PLACE_ON_COELLEN:
+                print(f"{i}: Place a merchant on Coellen") # todo: which space
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
+                while True:
+                    i = 1
         i += 1
 
 
