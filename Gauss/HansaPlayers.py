@@ -30,7 +30,14 @@ def printOptions(options, board):
                 print(f"{i}: Place a {option[1].name} on the route between {board.routes[board.displaceRoute].leftCity.name} "
                       f"and {board.routes[board.displaceRoute].rightCity.name}")
             case Move.DISPLACE_REPLACE:
-                print(f"{i}: Unsupported action type - {option[0]}")
+                print(f"{i}: Place a {option[2].name} on the route between {board.routes[option[1]].leftCity.name}"
+                      f" and {board.routes[option[1]].rightCity.name}")
+            case Move.DISPLACE_REPLACE_STOCK:
+                print(f"{i}: Place a {option[1].name} from your stock")
+            case Move.DISPLACE_REPLACE_SUPPLY:
+                print(f"{i}: Place a {option[1].name} from your supply")
+            case Move.DISPLACE_REPLACE_PASS:
+                print(f"{i}: Finish placing pieces")
             case Move.MOVE:
                 print(f"{i}: Move up to {board.players[board.activePlayer].skills[3] + 2} tradesmen")
             case Move.MOVE_REMOVE:
@@ -55,8 +62,6 @@ def printOptions(options, board):
                 print(f"{i}: Place a merchant on Coellen") # todo: which space
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
-                while True:
-                    i = 1
         i += 1
 
 
