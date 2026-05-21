@@ -1,5 +1,6 @@
-from enum import Enum
+import copy
 import random
+from enum import Enum
 
 MAX_SKILL_LEVELS = [4, 5, 3, 3, 3]
 
@@ -24,7 +25,10 @@ class Move(Enum):
     PLACE_ON_COELLEN = 17
     TRADE_ROUTE_NO_BONUS = 18
     USE_BONUS_TOKEN = 19
-    PLACE_BONUS_TOKEN = 20
+    BONUS_TOKEN_REMOVE = 20
+    BONUS_TOKEN_REPLACE = 21
+    BONUS_TOKEN_PASS = 22
+    PLACE_BONUS_TOKEN = 23
 
 class Tradesman(Enum):
     TRADER = 0
@@ -87,6 +91,7 @@ class BoardState:
     def __init__(self, players, initialState):
         self.players = players
         self.activePlayer = 0
+        self.lastPlayer = 0
         self.completedCities = 0
         self.cities = []
         self.routes = []
@@ -102,34 +107,71 @@ class BoardState:
         if initialState:
             self.setup()
 
-    # todo: somehow routes are filling up which shouldn't happen with the number of pieces available in 2p
+    def copyState(self):
+        newPlayers = copy.deepcopy(self.players)
+        newState = BoardState(newPlayers, False)
+        newState.activePlayer = self.activePlayer
+        newState.lastPlayer = self.lastPlayer
+        newState.completedCities = self.completedCities
+        newState.cities = copy.deepcopy(self.cities)
+        newState.routes = copy.deepcopy(self.routes)
+        newState.coellenSpots = copy.deepcopy(self.coellenSpots)
+        newState.displaceRoute = self.displaceRoute
+        newState.displacedPlayer = self.displacedPlayer
+        newState.eastWestConnections = self.eastWestConnections
+        newState.currentAction = self.currentAction
+        newState.bonusTokens = copy.deepcopy(self.bonusTokens)
+        newState.bonusTokenOverdraw = self.bonusTokenOverdraw
+        newState.isOver = self.isOver
+        newState.printingEnabled = False
+        return newState
 
     def makeMove(self, move):
+        self.lastPlayer = self.getOptionPlayerID()
         if self.currentAction == Move.PASS:
-            self.players[self.activePlayer].actions -= 1
-            if move[0] == Move.INCOME:
-                self.players[self.activePlayer].income(self.getIncomeAmount(self.players[self.activePlayer].skills[4]))
-            elif move[0] == Move.CREATE_TRADE_ROUTE:
-                self.displaceRoute = move[1] # reuse displaceRoute for the trade route being created
-                controller = self.cities[self.routes[self.displaceRoute].leftCity.value].getController()
-                if controller != -1:
-                    self.players[controller].gainPoints(1)
-                controller = self.cities[self.routes[self.displaceRoute].rightCity.value].getController()
-                if controller != -1:
-                    self.players[controller].gainPoints(1)
-                if self.routes[self.displaceRoute].bonusToken != BonusToken.NONE:
-                    self.players[self.activePlayer].unusedBonusTokens.append(self.routes[self.displaceRoute].bonusToken)
-                    self.routes[self.displaceRoute].bonusToken = BonusToken.NONE
-                    self.drawBonusToken()
-                self.currentAction = Move.CREATE_TRADE_ROUTE
-            elif move[0] == Move.MOVE:
-                self.players[self.activePlayer].toRemove = self.players[self.activePlayer].skills[3] + 2
-                self.currentAction = Move.MOVE
+            if move[0] == Move.USE_BONUS_TOKEN:
+                self.players[self.activePlayer].useBonusToken(move[1])
+                if move[1] == BonusToken.THREE_ACTIONS:
+                    self.players[self.activePlayer].actions += 3
+                elif move[1] == BonusToken.FOUR_ACTIONS:
+                    self.players[self.activePlayer].actions += 4
+                elif move[1] == BonusToken.DEVELOP_ABILITY:
+                    self.players[self.activePlayer].skills[move[2]] += 1
+                    if move[2] == 3:
+                        self.players[self.activePlayer].stock[1] += 1
+                    else:
+                        self.players[self.activePlayer].stock[0] += 1
+                elif move[1] == BonusToken.EXCHANGE_POSTS:
+                    self.cities[move[2]].exchangePosts(move[3])
+                elif move[1] == BonusToken.MOVE_THREE:
+                    self.players[self.activePlayer].toRemove = 3
+                    self.currentAction = Move.BONUS_TOKEN_REMOVE
             else:
-                self.currentAction = move[0]
+                self.players[self.activePlayer].actions -= 1
+                if move[0] == Move.INCOME:
+                    self.players[self.activePlayer].income(self.getIncomeAmount(self.players[self.activePlayer].skills[4]))
+                elif move[0] == Move.CREATE_TRADE_ROUTE:
+                    self.displaceRoute = move[1] # reuse displaceRoute for the trade route being created
+                    controller = self.cities[self.routes[self.displaceRoute].leftCity.value].getController()
+                    if controller != -1:
+                        self.players[controller].gainPoints(1)
+                    controller = self.cities[self.routes[self.displaceRoute].rightCity.value].getController()
+                    if controller != -1:
+                        self.players[controller].gainPoints(1)
+                    if self.routes[self.displaceRoute].bonusToken != BonusToken.NONE:
+                        self.players[self.activePlayer].unusedBonusTokens.append(self.routes[self.displaceRoute].bonusToken)
+                        self.routes[self.displaceRoute].bonusToken = BonusToken.NONE
+                        self.drawBonusToken()
+                    self.currentAction = Move.CREATE_TRADE_ROUTE
+                elif move[0] == Move.MOVE:
+                    self.players[self.activePlayer].toRemove = self.players[self.activePlayer].skills[3] + 2
+                    self.currentAction = Move.MOVE
+                else:
+                    self.currentAction = move[0]
         else:
             match move[0]:
                 case Move.PLACE:
+                    self.players[self.activePlayer].supply[move[1].value] -= 1
                     self.routes[move[2]].placeTradesman(self.activePlayer, move[1])
                     self.currentAction = Move.PASS
                 case Move.DISPLACE:
@@ -182,8 +224,6 @@ class BoardState:
                     if sum(self.players[self.activePlayer].toReplace) == 0:
                         self.currentAction = Move.PASS
                 case Move.ESTABLISH_TRADING_POST:
-                    # todo: also need to check for east west connection here
-                    # todo: add 1 to completed cities if complete
                     if move[2]:
                         # bonus token
                         self.players[self.activePlayer].useBonusToken(BonusToken.ADDITIONAL_POST)
@@ -193,6 +233,9 @@ class BoardState:
                         info = self.cities[move[1].value].fillPost(self.activePlayer)
                         self.players[self.activePlayer].gainPoints(info[0])
                         self.routes[self.displaceRoute].removeTradesman(self.activePlayer, info[1])
+                        if self.cities[move[1].value].isComplete():
+                            self.completedCities += 1
+                    self.checkEastWestConnection(self.activePlayer)
                     for space in self.routes[self.displaceRoute].spaces:
                         if space[0] == self.activePlayer:
                             if space[1] == Tradesman.TRADER:
@@ -201,8 +244,13 @@ class BoardState:
                                 self.players[self.activePlayer].stock[0] += 1
                     self.routes[self.displaceRoute].clear()
                     self.currentAction = Move.PASS
+                    self.checkGameEnd()
                 case Move.IMPROVE_SKILL:
                     self.players[self.activePlayer].skills[move[1]] += 1
+                    if move[1] == 3:
+                        self.players[self.activePlayer].stock[1] += 1
+                    else:
+                        self.players[self.activePlayer].stock[0] += 1
                     for space in self.routes[self.displaceRoute].spaces:
                         if space[0] == self.activePlayer:
                             if space[1] == Tradesman.TRADER:
@@ -211,6 +259,7 @@ class BoardState:
                                 self.players[self.activePlayer].stock[0] += 1
                     self.routes[self.displaceRoute].clear()
                     self.currentAction = Move.PASS
+                    self.checkGameEnd()
                 case Move.PLACE_ON_COELLEN:
                     self.coellenSpots[move[1]] = self.activePlayer
                     self.routes[self.displaceRoute].removeTradesman(self.activePlayer, Tradesman.MERCHANT)
@@ -222,6 +271,7 @@ class BoardState:
                                 self.players[self.activePlayer].stock[0] += 1
                     self.routes[self.displaceRoute].clear()
                     self.currentAction = Move.PASS
+                    self.checkGameEnd()
                 case Move.TRADE_ROUTE_NO_BONUS:
                     for space in self.routes[self.displaceRoute].spaces:
                         if space[0] == self.activePlayer:
@@ -231,7 +281,27 @@ class BoardState:
                                 self.players[self.activePlayer].stock[0] += 1
                     self.routes[self.displaceRoute].clear()
                     self.currentAction = Move.PASS
-
+                    self.checkGameEnd()
+                case Move.BONUS_TOKEN_REMOVE:
+                    self.players[self.activePlayer].toRemove -= 1
+                    self.players[self.activePlayer].oppID = self.routes[move[1]].spaces[move[2]][0]
+                    self.players[self.activePlayer].toReplace[self.routes[move[1]].spaces[move[2]][1].value] += 1
+                    self.routes[move[1]].spaces[move[2]][0] = -1 # remove piece
+                    self.currentAction = Move.BONUS_TOKEN_REPLACE
+                case Move.BONUS_TOKEN_REPLACE:
+                    if self.players[self.activePlayer].toReplace[0] > 0:
+                        self.players[self.activePlayer].toReplace[0] -= 1
+                        self.routes[move[1]].placeTradesman(self.players[self.activePlayer].oppID, Tradesman.TRADER)
+                    elif self.players[self.activePlayer].toReplace[1] > 0:
+                        self.players[self.activePlayer].toReplace[1] -= 1
+                        self.routes[move[1]].placeTradesman(self.players[self.activePlayer].oppID, Tradesman.MERCHANT)
+                    if self.players[self.activePlayer].toRemove == 0:
+                        self.currentAction = Move.PASS
+                    else:
+                        self.currentAction = Move.BONUS_TOKEN_REMOVE
+                case Move.BONUS_TOKEN_PASS:
+                    self.players[self.activePlayer].toRemove = 0
+                    self.currentAction = Move.PASS
 
     def getOptions(self):
         ret = []
@@ -251,23 +321,44 @@ class BoardState:
                 tokensOnRoutes = self.checkSelfTokensOnRoutes()
                 if tokensOnRoutes[0] or tokensOnRoutes[1]:
                     ret.append((Move.MOVE, ))
-                route = 0
-                while route < len(self.routes):
+                for route in range(len(self.routes)):
                     if self.routes[route].belongsTo(self.activePlayer):
                         ret.append((Move.CREATE_TRADE_ROUTE, route))
-                    route += 1
-            for token in self.players[self.activePlayer].unusedBonusTokens:
-                if token != BonusToken.ADDITIONAL_POST:
-                    ret.append((Move.USE_BONUS_TOKEN, token))
+            # passing with only bonus token options left forces turn end by reducing actions to -1
+            if self.players[self.activePlayer].actions > -1:
+                for token in self.players[self.activePlayer].unusedBonusTokens:
+                    if token != BonusToken.ADDITIONAL_POST:
+                        if token == BonusToken.DEVELOP_ABILITY:
+                            for skill in range(len(self.players[self.activePlayer].skills)):
+                                if self.players[self.activePlayer].skills[skill] < MAX_SKILL_LEVELS[skill]:
+                                    ret.append((Move.USE_BONUS_TOKEN, token, skill))
+                        elif token == BonusToken.MOVE_THREE:
+                            found = False
+                            for route in self.routes:
+                                for space in route.spaces:
+                                    if space[0] != -1 and space[0] != self.activePlayer:
+                                        ret.append((Move.USE_BONUS_TOKEN, token))
+                                        found = True
+                                        break
+                                if found:
+                                    break
+                        elif token == BonusToken.EXCHANGE_POSTS:
+                            for city in range(len(self.cities)):
+                                posts = self.cities[city].posts
+                                for post in range(len(posts) - 1):
+                                    if (posts[post] == self.activePlayer and posts[post + 1] != -1 and
+                                            posts[post + 1] != self.activePlayer):
+                                        ret.append((Move.USE_BONUS_TOKEN, token, city, post))
+                        else:
+                            ret.append((Move.USE_BONUS_TOKEN, token))
             if len(ret) == 0:
                 for token in self.players[self.activePlayer].bonusTokensToPlace:
-                    route = 0
-                    while route < len(self.routes):
+                    for route in range(len(self.routes)):
                         if self.canPlaceBonusToken(route):
                             ret.append((Move.PLACE_BONUS_TOKEN, token, route))
-                        route += 1
                 if len(ret) == 0:
                     # active player has no actions or bonus tokens, move to next player's turn
+                    self.players[self.activePlayer].actions = 0
                     self.activePlayer = (self.activePlayer + 1) % len(self.players)
                     self.players[self.activePlayer].gainActions()
                     return self.getOptions()
@@ -275,17 +366,14 @@ class BoardState:
                 # allow passing mainly for saving bonus tokens
                 ret.append((Move.PASS, ))
         elif self.currentAction == Move.PLACE:
-            route = 0
-            while route < len(self.routes):
+            for route in range(len(self.routes)):
                 if self.routes[route].hasSpace():
                     if self.players[self.activePlayer].supply[0] > 0:
                         ret.append((Move.PLACE, Tradesman.TRADER, route))
-                    if self.players[self.activePlayer].supply[0] > 1:
+                    if self.players[self.activePlayer].supply[1] > 0:
                         ret.append((Move.PLACE, Tradesman.MERCHANT, route))
-                route += 1
         elif self.currentAction == Move.DISPLACE:
-            route = 0
-            while route < len(self.routes):
+            for route in range(len(self.routes)):
                 for space in self.routes[route].spaces:
                     if space[0] != -1 and space[0] != self.activePlayer:
                         if space[1] == Tradesman.MERCHANT:
@@ -294,7 +382,6 @@ class BoardState:
                         else:
                             # active player will have at least 2 tradesmen if they were allowed to take this action
                             ret.append((Move.DISPLACE, space[0], Tradesman.TRADER, route))
-                route += 1
         elif self.currentAction == Move.DISPLACE_REMOVE:
             # active player must remove pieces from their supply to pay cost
             if self.players[self.activePlayer].supply[0] > 0:
@@ -307,7 +394,6 @@ class BoardState:
             if self.players[self.activePlayer].supply[1] > 0:
                 ret.append((Move.DISPLACE_PLACE, Tradesman.MERCHANT))
         elif self.currentAction == Move.DISPLACE_REPLACE:
-            # todo: displacePlayer replaces pieces
             # todo: what if the board is full? should they be allowed to displace?
             # toReplace is pieces that need to be placed, toRemove is number of additional pieces that can be chosen
             if sum(self.players[self.displacedPlayer].toReplace) > 0:
@@ -330,24 +416,20 @@ class BoardState:
                 ret.append((Move.DISPLACE_REPLACE_PASS, ))
         elif self.currentAction == Move.MOVE:
             if self.players[self.activePlayer].toRemove > 0:
-                route = 0
-                while route < len(self.routes):
+                for route in range(len(self.routes)):
                     for space in self.routes[route].spaces:
                         if space[0] == self.activePlayer:
                             ret.append((Move.MOVE_REMOVE, space[1], route))
-                    route += 1
                 ret.append((Move.MOVE_REMOVE, Move.PASS)) # finish choosing pieces to move
             else:
-                route = 0
-                while route < len(self.routes):
+                for route in range(len(self.routes)):
                     if self.routes[route].hasSpace():
                         if self.players[self.activePlayer].toReplace[0] > 0:
                             ret.append((Move.MOVE_REPLACE, Tradesman.TRADER, route))
                         if self.players[self.activePlayer].toReplace[1] > 0:
                             ret.append((Move.MOVE_REPLACE, Tradesman.MERCHANT, route))
-                    route += 1
         elif self.currentAction == Move.CREATE_TRADE_ROUTE:
-            # if empty post in adjacent city, add establish post (or if bonus token, todo) if possible
+            # if empty post in adjacent city, add establish post (or if bonus token) if possible
             postReqs = self.cities[self.routes[self.displaceRoute].leftCity.value].getPostReqs()
             if (self.routes[self.displaceRoute].hasTradesman(postReqs[0]) and
                     self.players[self.activePlayer].skills[Skill.PRIVILEGE.value - 1] >= postReqs[1].value):
@@ -357,9 +439,9 @@ class BoardState:
                     self.players[self.activePlayer].skills[Skill.PRIVILEGE.value - 1] >= postReqs[1].value):
                 ret.append((Move.ESTABLISH_TRADING_POST, self.routes[self.displaceRoute].rightCity, False))
             if self.players[self.activePlayer].unusedBonusTokens.__contains__(BonusToken.ADDITIONAL_POST):
-                if self.routes[self.displaceRoute].leftCity.getFirstVacantPostPos() != 0:
+                if self.cities[self.routes[self.displaceRoute].leftCity.value].getFirstVacantPostPos() != 0:
                     ret.append((Move.ESTABLISH_TRADING_POST, self.routes[self.displaceRoute].leftCity, True))
-                if self.routes[self.displaceRoute].rightCity.getFirstVacantPostPos() != 0:
+                if self.cities[self.routes[self.displaceRoute].rightCity.value].getFirstVacantPostPos() != 0:
                     ret.append((Move.ESTABLISH_TRADING_POST, self.routes[self.displaceRoute].rightCity, True))
             # if skill city and skill is not max level, add improve skill option
             if 0 < self.cities[self.routes[self.displaceRoute].leftCity.value].skill.value < 6:
@@ -374,13 +456,22 @@ class BoardState:
             if ((self.routes[self.displaceRoute].leftCity == CityName.COELLEN or
                     self.routes[self.displaceRoute].rightCity == CityName.COELLEN) and
                     self.routes[self.displaceRoute].hasTradesman(Tradesman.MERCHANT)):
-                i = 0
-                while i < 4:
+                for i in range(4):
                     if self.coellenSpots[i] == -1 and self.players[self.activePlayer].skills[2] >= i:
                         ret.append((Move.PLACE_ON_COELLEN, i))
-                    i += 1
             # do nothing option
             ret.append((Move.TRADE_ROUTE_NO_BONUS, ))
+        elif self.currentAction == Move.BONUS_TOKEN_REMOVE:
+            for route in range(len(self.routes)):
+                for space in range(len(self.routes[route].spaces)):
+                    if (self.routes[route].spaces[space][0] != self.activePlayer and
+                            self.routes[route].spaces[space][0] != -1):
+                        ret.append((Move.BONUS_TOKEN_REMOVE, route, space))
+            ret.append((Move.BONUS_TOKEN_PASS, ))
+        elif self.currentAction == Move.BONUS_TOKEN_REPLACE:
+            for route in range(len(self.routes)):
+                if self.routes[route].hasSpace():
+                    ret.append((Move.BONUS_TOKEN_REPLACE, route))
         ret = set(ret) # remove duplicates
         return tuple(ret)
 
@@ -397,11 +488,9 @@ class BoardState:
         while len(routesWithSpace) == 0:
             # add adjacent routes
             for route in routes.copy():
-                i = 0
-                while i < len(self.routes):
+                for i in range(len(self.routes)):
                     if self.adjacent(self.routes[i], self.routes[route]):
                         routes.add(i)
-                    i += 1
             # check routes for empty space
             for route in routes:
                 if route != initialRoute and self.routes[route].hasSpace():
@@ -411,6 +500,47 @@ class BoardState:
     def adjacent(self, route1, route2):
         return (route1.leftCity == route2.leftCity or route1.leftCity == route2.rightCity or
                 route1.rightCity == route2.leftCity or route1.rightCity == route2.rightCity)
+
+    def getAdjacentCities(self, city):
+        # return set of all cities adjacent to the given city
+        # two cities are adjacent if they are the left and right city of a route
+        adjacent = set()
+        for route in self.routes:
+            if route.leftCity == city:
+                adjacent.add(route.rightCity)
+            elif route.rightCity == city:
+                adjacent.add(route.leftCity)
+        return adjacent
+
+    def getAdjacentCitiesWithPosts(self, city, player):
+        # return set of all cities adjacent to the given city which have posts owned by player
+        # two cities are adjacent if they are the left and right city of a route
+        adjacent = set()
+        for route in self.routes:
+            if route.leftCity == city:
+                if self.cities[route.rightCity].numPosts(player) > 0:
+                    adjacent.add(route.rightCity)
+            elif route.rightCity == city:
+                if self.cities[route.leftCity].numPosts(player) > 0:
+                    adjacent.add(route.leftCity)
+        return adjacent
+
+    def checkEastWestConnection(self, player):
+        if (self.cities[CityName.ARNHEIM.value].numPosts(player) == 0 or
+                self.cities[CityName.STENDAL.value].numPosts(player) == 0):
+            return
+        network = {CityName.ARNHEIM.value}
+        self.expandNetwork(network, player)
+        for city in network:
+            if city == CityName.STENDAL.value:
+                if self.eastWestConnections == 0:
+                    self.players[player].gainPoints(7)
+                elif self.eastWestConnections == 1:
+                    self.players[player].gainPoints(4)
+                elif self.eastWestConnections == 2:
+                    self.players[player].gainPoints(2)
+                self.eastWestConnections += 1
+                return
 
     def getIncomeAmount(self, skillLevel):
         if skillLevel == 0:
@@ -430,7 +560,7 @@ class BoardState:
     def canPlaceBonusToken(self, route):
         if self.routes[route].bonusToken == -1:
             return False
-        for space in self.routes[route]:
+        for space in self.routes[route].spaces:
             if space != -1:
                 return False
         return (self.cities[self.routes[route].leftCity].hasEmptyOffice() or
@@ -467,17 +597,108 @@ class BoardState:
         return (trader, merchant)
 
     def checkGameEnd(self):
-        # check if the game should end, should be called at the end of each action that can trigger the conditions (todo?)
+        # check if the game should end, should be called at the end of each action that can trigger the conditions
         if self.bonusTokenOverdraw or self.completedCities >= 10:
             self.isOver = True
         for player in self.players:
             if player.points >= 20:
                 self.isOver = True
-                return
+        if self.isOver:
+            for i in range(len(self.players)):
+                player = self.players[i]
+                for i in range(1, 5):
+                    if player.skills[i] == MAX_SKILL_LEVELS[i]:
+                        player.gainPoints(4) # 4 points for each completed skill except keys
+                bonusTokens = len(player.unusedBonusTokens) + len(player.usedBonusTokens)
+                if bonusTokens > 9:
+                    player.gainPoints(21)
+                elif bonusTokens > 7:
+                    player.gainPoints(15)
+                elif bonusTokens > 5:
+                    player.gainPoints(10)
+                elif bonusTokens > 3:
+                    player.gainPoints(6)
+                elif bonusTokens > 1:
+                    player.gainPoints(3)
+                elif bonusTokens > 0:
+                    player.gainPoints(1)
+                # find largest network
+                networks = set() # store each network of cities with player presence as a set of city IDs
+                for city in range(len(self.cities)):
+                    if self.cities[city].numPosts(i) > 0:
+                        network = {city}
+                        self.expandNetwork(network, i)
+                        networks.add(network)
+                posts = set() # number of posts in each network
+                for network in networks:
+                    count = 0
+                    for city in network:
+                        count += self.cities[city].numPosts(i)
+                    posts.add(count)
+                if posts:
+                    player.gainPoints(max(posts) * self.getKeyMultiplier(player.skills[0]))
+            for i in range(len(self.coellenSpots)):
+                if self.coellenSpots[i] != -1:
+                    self.players[i].gainPoints(7 + i)
+                    if i == 3:
+                        self.players[i].gainPoints(1)
+            for city in self.cities:
+                controller = city.getController()
+                if controller != -1:
+                    self.players[controller].gainPoints(2)
+
+    def forceScore(self):
+        # force the game to do end of game scoring for early playout termination
+        if self.isOver:
+            return # already scored
+        self.isOver = True
+        self.checkGameEnd()
+
+    def getWinners(self):
+        # todo: tiebreakers
+        scores = [player.points for player in self.players]
+        highScore = max(scores)
+        count = 0
+        winners = []
+        for score in scores:
+            if score == highScore:
+                winners.append(1)
+                count += 1
+            else:
+                winners.append(0)
+        if count > 1:
+            winners = [winner / 2 for winner in winners]
+        return winners
+
+    def countPosts(self, player):
+        posts = 0
+        for city in self.cities:
+            for post in city.posts:
+                if post == player:
+                    posts += 1
+        return posts
+
+    def getKeyMultiplier(self, skillLevel):
+        if skillLevel < 2:
+            return skillLevel + 1
+        return skillLevel
+
+    def expandNetwork(self, network, player):
+        # find ids of all connected cities containing posts and add them to network
+        newCities = set()
+        for city in network:
+            newCities = newCities.union(self.getAdjacentCitiesWithPosts(city, player))
+        newCities = newCities.difference(network)
+        while newCities:
+            network = network.union(newCities)
+            newCities = set()
+            for city in network:
+                newCities = newCities.union(self.getAdjacentCitiesWithPosts(city, player))
+            newCities = newCities.difference(network)
 
 
     def getOptionPlayerID(self):
-        # return brain of player to move
+        # return id of player to move
         if self.currentAction == Move.DISPLACE_REPLACE:
             return self.displacedPlayer
         return self.activePlayer
@@ -619,10 +840,12 @@ class BoardState:
         # Halle
         self.cities.append(City(Skill.KEYS, [-1, -1], ((Tradesman.TRADER, Color.WHITE),
                                                        (Tradesman.TRADER, Color.ORANGE)), (1, 0)))
+        startingTokens = [BonusToken.ADDITIONAL_POST, BonusToken.EXCHANGE_POSTS, BonusToken.MOVE_THREE]
+        random.shuffle(startingTokens)
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.GRONINGEN, CityName.EMDEN))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0], [-1, 0]], CityName.EMDEN, CityName.OSNABRUCK))
         self.routes.append(Route([[-1, 0], [-1, 0]], CityName.KAMPEN, CityName.OSNABRUCK))
-        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.OSNABRUCK, CityName.BREMEN)) # todo: bonus token here
+        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.OSNABRUCK, CityName.BREMEN, startingTokens.pop()))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.KAMPEN, CityName.ARNHEIM))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.ARNHEIM, CityName.MUNSTER))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.ARNHEIM, CityName.DUISBURG))
@@ -634,7 +857,7 @@ class BoardState:
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0], [-1, 0]], CityName.HAMBURG, CityName.LUNEBURG))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.HANNOVER, CityName.LUNEBURG))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.MINDEN, CityName.HANNOVER))
-        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.LUNEBURG, CityName.BERLEBERG)) # todo: bonus token here
+        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.LUNEBURG, CityName.BERLEBERG, startingTokens.pop()))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.BERLEBERG, CityName.STENDAL))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0], [-1, 0]], CityName.MINDEN, CityName.BRUNSWICK))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.MINDEN, CityName.PADERBORN))
@@ -647,26 +870,29 @@ class BoardState:
         self.routes.append(Route([[-1, 0], [-1, 0]], CityName.DUISBURG, CityName.DORTMUND))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.DORTMUND, CityName.PADERBORN))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.PADERBORN, CityName.HILDESHEIM))
-        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.HILDESHEIM, CityName.GOSLAR)) # todo: bonus token here
+        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.HILDESHEIM, CityName.GOSLAR, startingTokens.pop()))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.PADERBORN, CityName.MARBURG))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0], [-1, 0]], CityName.COELLEN, CityName.MARBURG))
         if len(self.players) > 3:
             self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.EMDEN, CityName.STADE))
             self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.MARBURG, CityName.GOTTINGEN))
-        # todo: bonus token pile
+        self.bonusTokens = [BonusToken.ADDITIONAL_POST, BonusToken.ADDITIONAL_POST, BonusToken.ADDITIONAL_POST,
+                            BonusToken.EXCHANGE_POSTS, BonusToken.EXCHANGE_POSTS, BonusToken.MOVE_THREE,
+                            BonusToken.DEVELOP_ABILITY, BonusToken.DEVELOP_ABILITY, BonusToken.THREE_ACTIONS,
+                            BonusToken.THREE_ACTIONS, BonusToken.FOUR_ACTIONS, BonusToken.FOUR_ACTIONS]
+        random.shuffle(self.bonusTokens)
 
     def printBoard(self):
         print(f"active player: {self.activePlayer}")
         print(f"")
-        city = 0
-        while city < len(self.cities):
+        for player in range(len(self.players)):
+            print(f"player {player}:")
+            self.players[player].printPlayer()
+        for city in range(len(self.cities)):
             print(f"city: {CityName(city).name}, posts:")
-            post = 0
-            while post < len(self.cities[city].bonusPosts):
+            for post in range(len(self.cities[city].bonusPosts)):
                 print(f"bonus post occupied by player {self.cities[city].bonusPosts[post]}", end=", ")
-                post += 1
-            post = 0
-            while post < len(self.cities[city].posts) - 1:
+            for post in range(len(self.cities[city].posts) - 1):
                 if self.cities[city].posts[post] == -1:
                     print(f"unoccupied {self.cities[city].postRequirements[post][1].name} "
                           f"{self.cities[city].postRequirements[post][0].name} post", end=", ")
@@ -674,7 +900,7 @@ class BoardState:
                     print(f"{self.cities[city].postRequirements[post][1].name} "
                           f"{self.cities[city].postRequirements[post][0].name} post occupied by player "
                           f"{self.cities[city].posts[post]}", end=", ")
-                post += 1
+            post = len(self.cities[city].posts) - 1
             if self.cities[city].posts[post] == -1:
                 print(f"unoccupied {self.cities[city].postRequirements[post][1].name} "
                       f"{self.cities[city].postRequirements[post][0].name} post")
@@ -682,23 +908,19 @@ class BoardState:
                 print(f"{self.cities[city].postRequirements[post][1].name} "
                       f"{self.cities[city].postRequirements[post][0].name} post occupied by player "
                       f"{self.cities[city].posts[post]}")
-            city += 1
-        route = 0
-        while route < len(self.routes):
+        for route in range(len(self.routes)):
             print(f"route between {self.routes[route].leftCity.name} and {self.routes[route].rightCity.name}:")
-            space = 0
-            while space < len(self.routes[route].spaces) - 1:
+            for space in range(len(self.routes[route].spaces) - 1):
                 if self.routes[route].spaces[space][0] == -1:
                     print(f"unoccupied space", end=", ")
                 else:
                     print(f"player {self.routes[route].spaces[space][0]}'s "
                           f"{self.routes[route].spaces[space][1].name}", end=", ")
-                space += 1
+            space = len(self.routes[route].spaces) - 1
             if self.routes[route].spaces[space][0] == -1:
                 print(f"unoccupied space")
             else:
                 print(f"player {self.routes[route].spaces[space][0]}'s {self.routes[route].spaces[space][1].name}")
-            route += 1
 
 class Player:
     def __init__(self, brain):
@@ -715,6 +937,7 @@ class Player:
         self.unusedBonusTokens = []
         self.usedBonusTokens = []
         self.bonusTokensToPlace = [] # place at end of turn
+        self.oppID = 0 # opp that piece removed by bonus token belongs to
 
     def gainActions(self):
         # gain a number of actions based on skill level
@@ -745,6 +968,22 @@ class Player:
             self.unusedBonusTokens.remove(token)
             self.usedBonusTokens.append(token)
 
+    def printPlayer(self):
+        print(self.brain)
+        print("skill levels:")
+        print(f"keys: {self.skills[0]}")
+        print(f"actions: {self.skills[1]}")
+        print(f"privilege: {self.skills[2]}")
+        print(f"book: {self.skills[3]}")
+        print(f"income: {self.skills[4]}")
+        print(f"stock: {self.stock[0]} traders and {self.stock[1]} merchants")
+        print(f"supply: {self.supply[0]} traders and {self.supply[1]} merchants")
+        print(f"actions: {self.actions}")
+        print(f"points: {self.points}")
+        print(f"toRemove: {self.toRemove}, toReplace: {self.toReplace}")
+        print(f"unused bonus tokens: {self.unusedBonusTokens}, used bonus tokens: {self.usedBonusTokens}")
+        print(f"bonusTokensToPlace: {self.bonusTokensToPlace}")
+
 class City:
     def __init__(self, skill, posts, postRequirements, postPoints):
         self.skill = skill
@@ -752,6 +991,9 @@ class City:
         self.postRequirements = postRequirements
         self.bonusPosts = []
         self.postPoints = postPoints
+
+    def isComplete(self):
+        return -1 not in self.posts
 
     def getController(self):
         players = [0, 0, 0, 0, 0]
@@ -768,12 +1010,20 @@ class City:
                 winner = post
         return winner
 
+    def numPosts(self, player):
+        posts = 0
+        for post in self.bonusPosts:
+            if post == player:
+                posts += 1
+        for post in self.posts:
+            if post == player:
+                posts += 1
+        return posts
+
     def getFirstVacantPostPos(self):
-        i = 0
-        while i < len(self.posts):
+        for i in range(len(self.posts)):
             if self.posts[i] == -1:
                 return i
-            i += 1
         return -1
 
     def getPostReqs(self):
@@ -783,20 +1033,26 @@ class City:
         return self.postRequirements[pos]
 
     def fillPost(self, player):
-        i = 0
-        while i < len(self.posts):
+        for i in range(len(self.posts)):
             if self.posts[i] == -1:
                 self.posts[i] = player
                 return (self.postPoints[i], self.postRequirements[i][0])
-            i += 1
+
+    def fillBonusPost(self, player):
+        self.bonusPosts.append(player)
+
+    def exchangePosts(self, post):
+        buffer = self.posts[post]
+        self.posts[post] = self.posts[post + 1]
+        self.posts[post + 1] = buffer
 
 class Route:
-    def __init__(self, spaces, leftCity, rightCity):
+    def __init__(self, spaces, leftCity, rightCity, bonusToken=BonusToken.NONE):
         self.spaces = spaces
         # left/right are mostly to differentiate the two adjacent cities and otherwise arbitrary
         self.leftCity = leftCity
         self.rightCity = rightCity
-        self.bonusToken = BonusToken.NONE
+        self.bonusToken = bonusToken
 
     def isEmpty(self):
         for space in self.spaces:
@@ -805,10 +1061,8 @@ class Route:
         return True
 
     def clear(self):
-        i = 0
-        while i < len(self.spaces):
+        for i in range(len(self.spaces)):
             self.spaces[i] = [-1, 0]
-            i += 1
 
     def hasSpace(self):
         for space in self.spaces:
@@ -821,6 +1075,13 @@ class Route:
             if space[1] == type:
                 return True
         return False
+
+    def countPieces(self, player):
+        count = 0
+        for space in self.spaces:
+            if space[0] == player:
+                count += 1
+        return count
 
     def belongsTo(self, player):
         for space in self.spaces:

@@ -6,7 +6,7 @@ def printMove(move):
     print(f"making move: {move}")  # todo: more detail
 
 
-board = Game.BoardState((Game.Player(HansaPlayers.RandomPlayer()), Game.Player(HansaPlayers.RandomPlayer())), True)
+board = Game.BoardState((Game.Player(HansaPlayers.HumanPlayer()), Game.Player(HansaPlayers.MCTSPlayer(100))), True)
 board.printBoard()
 
 while not board.isOver:
@@ -15,4 +15,8 @@ while not board.isOver:
     move = board.getOptionPlayer().play(board)
     if board.printingEnabled:
         printMove(move)
+        #board.printBoard()
     board.makeMove(move)
+print("game over")
+for i in range(len(board.players)):
+    print(f"Player {i} has {board.players[i].points} points")

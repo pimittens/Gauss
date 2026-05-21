@@ -1,4 +1,4 @@
-import random
+import MCTS
 import numpy as np
 from Game import Move, Skill
 
@@ -60,6 +60,8 @@ def printOptions(options, board):
                 print(f"{i}: Establish the trade route with no bonus")
             case Move.PLACE_ON_COELLEN:
                 print(f"{i}: Place a merchant on Coellen") # todo: which space
+            case Move.USE_BONUS_TOKEN:
+                print(f"{i}: Use a {option[1].name} bonus token")
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
         i += 1
@@ -73,8 +75,17 @@ class RandomPlayer():
         return options[np.random.randint(0, len(options))]
 
 class MCTSPlayer():
-    # todo
-    pass
+    def __init__(self, numSims):
+        self.numSims = numSims
+
+    def play(self, board):
+        options = board.getOptions()
+        if board.printingEnabled:
+            printOptions(options, board)
+        if len(options) == 1:
+            return options[0]
+        move = MCTS.mcts(board, self.numSims)
+        return move
 
 class HumanPlayer():
     def play(self, board):
@@ -85,7 +96,7 @@ class HumanPlayer():
         while True:
             choice = input("select from the above options: ")
             if choice == "print":
-                board.printBoardState()
+                board.printBoard()
                 printOptions(options, board)
                 continue
             if not choice.isdigit():
