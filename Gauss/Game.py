@@ -1083,6 +1083,13 @@ class Route:
                 count += 1
         return count
 
+    def countEmptySpace(self):
+        count = 0
+        for space in self.spaces:
+            if space[0] == -1:
+                count += 1
+        return count
+
     def belongsTo(self, player):
         for space in self.spaces:
             if space[0] != player:

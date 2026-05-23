@@ -6,7 +6,7 @@ def printMove(move):
     print(f"making move: {move}")  # todo: more detail
 
 
-board = Game.BoardState((Game.Player(HansaPlayers.HumanPlayer()), Game.Player(HansaPlayers.MCTSPlayer(100))), True)
+board = Game.BoardState((Game.Player(HansaPlayers.MCTSPlayer(1000)), Game.Player(HansaPlayers.MCTSPlayer(1000))), True)
 board.printBoard()
 
 while not board.isOver:
