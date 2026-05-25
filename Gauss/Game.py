@@ -129,7 +129,10 @@ class BoardState:
     def makeMove(self, move):
         self.lastPlayer = self.getOptionPlayerID()
         if self.currentAction == Move.PASS:
-            if move[0] == Move.USE_BONUS_TOKEN:
+            if move[0] == Move.PLACE_BONUS_TOKEN:
+                self.routes[move[2]].bonusToken = move[1]
+                self.players[self.activePlayer].bonusTokensToPlace.remove(move[1])
+            elif move[0] == Move.USE_BONUS_TOKEN:
                 self.players[self.activePlayer].useBonusToken(move[1])
                 if move[1] == BonusToken.THREE_ACTIONS:
                     self.players[self.activePlayer].actions += 3
@@ -247,16 +250,18 @@ class BoardState:
                     self.checkGameEnd()
                 case Move.IMPROVE_SKILL:
                     self.players[self.activePlayer].skills[move[1]] += 1
+                    if move[1] == 1 and self.players[self.activePlayer].skills[move[1]] in [1, 3, 5]:
+                        self.players[self.activePlayer].actions += 1
                     if move[1] == 3:
-                        self.players[self.activePlayer].stock[1] += 1
+                        self.players[self.activePlayer].supply[1] += 1
                     else:
-                        self.players[self.activePlayer].stock[0] += 1
+                        self.players[self.activePlayer].supply[0] += 1
                     for space in self.routes[self.displaceRoute].spaces:
                         if space[0] == self.activePlayer:
                             if space[1] == Tradesman.TRADER:
                                 self.players[self.activePlayer].stock[0] += 1
                             elif space[1] == Tradesman.MERCHANT:
-                                self.players[self.activePlayer].stock[0] += 1
+                                self.players[self.activePlayer].stock[1] += 1
                     self.routes[self.displaceRoute].clear()
                     self.currentAction = Move.PASS
                     self.checkGameEnd()
@@ -561,10 +566,10 @@ class BoardState:
         if self.routes[route].bonusToken == -1:
             return False
         for space in self.routes[route].spaces:
-            if space != -1:
+            if space[0] != -1:
                 return False
-        return (self.cities[self.routes[route].leftCity].hasEmptyOffice() or
-                self.cities[self.routes[route].rightCity].hasEmptyOffice())
+        return not (self.cities[self.routes[route].leftCity.value].isComplete() and
+                self.cities[self.routes[route].rightCity.value].isComplete())
 
     def checkSelfTokensOnRoutes(self):
         # check if there is a trader or merchant belong to the active player on the board
@@ -848,6 +853,7 @@ class BoardState:
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.OSNABRUCK, CityName.BREMEN, startingTokens.pop()))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.KAMPEN, CityName.ARNHEIM))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.ARNHEIM, CityName.MUNSTER))
+        self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.MUNSTER, CityName.MINDEN))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.ARNHEIM, CityName.DUISBURG))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0], [-1, 0]], CityName.BREMEN, CityName.HAMBURG))
         self.routes.append(Route([[-1, 0], [-1, 0], [-1, 0]], CityName.BREMEN, CityName.HANNOVER))
@@ -910,6 +916,8 @@ class BoardState:
                       f"{self.cities[city].posts[post]}")
         for route in range(len(self.routes)):
             print(f"route between {self.routes[route].leftCity.name} and {self.routes[route].rightCity.name}:")
+            if self.routes[route].bonusToken != BonusToken.NONE:
+                print(f"bonus token: {self.routes[route].bonusToken}")
             for space in range(len(self.routes[route].spaces) - 1):
                 if self.routes[route].spaces[space][0] == -1:
                     print(f"unoccupied space", end=", ")
@@ -941,7 +949,7 @@ class Player:
 
     def gainActions(self):
         # gain a number of actions based on skill level
-        self.actions = (self.skills[2] + 1) // 2 + 2
+        self.actions = (self.skills[1] + 1) // 2 + 2
 
     def income(self, amount):
         while self.stock[1] > 0 and amount > 0:

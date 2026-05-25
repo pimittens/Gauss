@@ -3,7 +3,6 @@ import numpy as np
 from Game import Move, Skill
 
 def printOptions(options, board):
-    # todo: print possible moves
     print(f"Decision for player {board.getOptionPlayerID()} (current action: {board.currentAction})")
     i = 1
     for option in options:
@@ -55,13 +54,16 @@ def printOptions(options, board):
             case Move.ESTABLISH_TRADING_POST:
                 print(f"{i}: Establish a trading post in the city of {option[1].name}") # todo: probably print post type
             case Move.IMPROVE_SKILL:
-                print(f"{i}: Improve your {Skill(option[1]).name} skill")
+                print(f"{i}: Improve your {Skill(option[1] + 1).name} skill")
             case Move.TRADE_ROUTE_NO_BONUS:
                 print(f"{i}: Establish the trade route with no bonus")
             case Move.PLACE_ON_COELLEN:
                 print(f"{i}: Place a merchant on Coellen") # todo: which space
             case Move.USE_BONUS_TOKEN:
                 print(f"{i}: Use a {option[1].name} bonus token")
+            case Move.PLACE_BONUS_TOKEN:
+                print(f"{i}: Place a {option[1].name} bonus token on the route between "
+                      f"{board.routes[option[2]].leftCity.name} and {board.routes[option[2]].rightCity.name}")
             case _:
                 print(f"{i}: Unsupported action type - {option[0]}")
         i += 1
