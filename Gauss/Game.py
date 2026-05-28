@@ -1062,6 +1062,10 @@ class Route:
         self.rightCity = rightCity
         self.bonusToken = bonusToken
 
+    def adjacentTo(self, city1, city2):
+        return ((self.leftCity == city1 and self.rightCity == city2) or
+                (self.leftCity == city2 and self.rightCity == city1))
+
     def isEmpty(self):
         for space in self.spaces:
             if space[0] != -1:
